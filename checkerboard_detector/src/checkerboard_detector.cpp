@@ -86,6 +86,7 @@ public:
     ros::Publisher _pubPoseStamped;
     ros::Publisher _pubCornerPoint;
     ros::Publisher _pubPolygonArray;
+    ros::Publisher _pubVisualizedImage;
     ros::ServiceServer _srvDetect;
     int message_throttle_;
     int message_throttle_counter_;
@@ -241,6 +242,7 @@ public:
                                                              connect_cb, connect_cb);
             _pubCornerPoint = _node.advertise<geometry_msgs::PointStamped>("corner_point", publish_queue_size, connect_cb, connect_cb);
             _pubPolygonArray = _node.advertise<jsk_recognition_msgs::PolygonArray>("polygons", publish_queue_size, connect_cb, connect_cb);
+            _pubVisualizedImage = _node.advertise<sensor_msgs::Image>("visualized_image", publish_queue_size, connect_cb, connect_cb);
         }
         else {
             _pubDetection =
@@ -249,6 +251,7 @@ public:
                 _node.advertise<geometry_msgs::PoseStamped> ("objectdetection_pose", publish_queue_size);
             _pubCornerPoint = _node.advertise<geometry_msgs::PointStamped>("corner_point", publish_queue_size);
             _pubPolygonArray = _node.advertise<jsk_recognition_msgs::PolygonArray>("polygons", publish_queue_size);
+            _pubVisualizedImage = _node.advertise<sensor_msgs::Image>("visualized_image", publish_queue_size);
             subscribe();
         }
         //this->camInfoSubscriber = _node.subscribe("camera_info", 1, &CheckerboardDetector::caminfo_cb, this);
@@ -394,7 +397,8 @@ public:
     {
       boost::mutex::scoped_lock lock(this->mutex);
       if (_pubDetection.getNumSubscribers() == 0 && _pubCornerPoint.getNumSubscribers() == 0 &&
-          _pubPoseStamped.getNumSubscribers() == 0 && _pubPolygonArray.getNumSubscribers() == 0)
+          _pubPoseStamped.getNumSubscribers() == 0 && _pubPolygonArray.getNumSubscribers() == 0 &&
+          _pubVisualizedImage.getNumSubscribers() == 0)
         {
             unsubscribe();
         }
@@ -408,6 +412,8 @@ public:
                 const sensor_msgs::Image& imagemsg,
                 const sensor_msgs::CameraInfo& camInfoMsg)
     {
+        bool visualize = _pubVisualizedImage.getNumSubscribers() > 0;
+
         image_geometry::PinholeCameraModel model;
         sensor_msgs::CameraInfo cam_info(camInfoMsg);
         if (cam_info.distortion_model.empty()) {
@@ -470,7 +476,7 @@ public:
 
         cv::Mat frame;
         
-        if( display ) {
+        if( display || visualize ) {
             cv::cvtColor(capture, frame, CV_GRAY2BGR);
         }
 
@@ -585,7 +591,7 @@ public:
                      (float)(ros::Time::now() - lasttime).toSec());
         lasttime = ros::Time::now();
 
-        if( display ) {
+        if( display || visualize ) {
             // draw each found checkerboard
             for(size_t i = 0; i < vobjects.size(); ++i) {
                 int itype = maptypes[vobjects[i].type];
@@ -653,8 +659,15 @@ public:
                 _pubCornerPoint.publish(point_msg);
             }
 
-            cv::imshow("Checkerboard Detector",frame);
-            cv::waitKey(1);
+            if ( display ) {
+              cv::imshow("Checkerboard Detector",frame);
+              cv::waitKey(1);
+            }
+            if ( visualize ) {
+              _pubVisualizedImage.publish(
+                  cv_bridge::CvImage(
+                    imagemsg.header, "bgr8", frame).toImageMsg());
+            }
         }
 
         return true;
